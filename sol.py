@@ -3,8 +3,12 @@ import sys
 import math
 from collections import namedtuple, deque
 from enum import Enum
-from random import randint, choice, shuffle
+from random import randint, choice, shuffle, seed
 from dataclasses import dataclass
+from time import time
+
+seed(1337)
+start_time = time()
 
 class Side(Enum):
     ME = 0
@@ -25,6 +29,12 @@ class Wealth:
     income: int
     opponent_gold: int
     opponent_income: int
+
+@dataclass
+class G:
+    my_units_pos: set = None
+    map: list = None
+g = G()
 
 def log(x):
     print(x, file=sys.stderr)
@@ -62,11 +72,7 @@ def turn_input():
 
     return wealth, gamemap, buildings, units
 
-def move_random(unit):
-    target = choice(neighbors(unit))
-    return f"MOVE {unit.id} {target.x} {target.y}"
-
-def neighbors(point, gamemap=None, units=None, randomize=False):
+def neighbors(point, randomize=False):
     res = []
     if point.x < 11:
         res.append(Point(point.x+1, point.y))
@@ -77,19 +83,16 @@ def neighbors(point, gamemap=None, units=None, randomize=False):
     if point.y > 0:
         res.append(Point(point.x, point.y-1))
 
-    if gamemap:
-        res = [r for r in res if gamemap[r.y][r.x] != "#"]
+    res = [r for r in res if g.map[r.y][r.x] != "#"]
 
     if randomize:
         shuffle(res)
-
-    if units:
-        my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
-        res = [r for r in res if Point(r.x, r.y) not in my_units_pos]
+        
+    res = [r for r in res if Point(r.x, r.y) not in g.my_units_pos]
 
     return res
 
-def bfs(gamemap, units, start, end):
+def bfs(start, end):
 
     def next_move(prev):
         cur = end
@@ -104,10 +107,17 @@ def bfs(gamemap, units, start, end):
         cur = q.popleft()
         if cur == end:
             return next_move(prev)
-        for pos in neighbors(cur, gamemap, units, randomize=True):
+        for pos in neighbors(cur, randomize=True):
             if pos not in prev:
                 prev[pos] = cur
                 q.append(pos)
+        
+        # i = 0
+        # delta_time = time() - start_time
+        # if delta_time > 0.2:
+        #     if i%100==0:
+        #         log(delta_time)
+        #     i+=1
 
 def occupied(point, gamemap, *collections):
     for collection in collections:
@@ -120,19 +130,23 @@ def occupied(point, gamemap, *collections):
 
 def make_move(wealth, gamemap, buildings, units):
     commands=[]
-    my_units=[u for u in units if u.owner == Side.ME]
+
+    global g
+    g = G()
+    g.my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
+    g.map = gamemap
 
     # TRAIN
     spawn_options = set()
     my_squares = set()
-
+    my_units=[u for u in units if u.owner == Side.ME]
     for x in range(12):
         for y in range(12):
-            if gamemap[y][x] == "O":
+            if g.map[y][x] == "O":
                 for n in neighbors(Point(x, y)):
-                    if not occupied(n, gamemap, my_units, buildings):
+                    if not occupied(n, g.map, my_units, buildings):
                         spawn_options.add(n)
-                if not occupied(Point(x, y), gamemap, my_units, buildings):
+                if not occupied(Point(x, y), g.map, my_units, buildings):
                     spawn_options.add(Point(x, y))
                     my_squares.add(Point(x, y))
     
@@ -141,7 +155,6 @@ def make_move(wealth, gamemap, buildings, units):
     enemy_level_1 = [u for u in units if u.owner == Side.THEM and u.level == 1]
     enemy_level_1_positions = {Point(u.x, u.y) for u in enemy_level_1}
     border_squares_with_level_1_enemies = [s for s in border_squares if s in enemy_level_1_positions]
-
     while wealth.gold >= 20 and wealth.income >= 0 and border_squares_with_level_1_enemies:
         spawn_point = choice(border_squares_with_level_1_enemies)
         commands.append(f"TRAIN 2 {spawn_point.x} {spawn_point.y}")
@@ -162,8 +175,7 @@ def make_move(wealth, gamemap, buildings, units):
     my_hq = [b for b in buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
 
     for unit in my_units:
-        #commands.append(move_random(unit))
-        move = bfs(gamemap, units, Point(unit.x, unit.y), Point(enemy_hq.x, enemy_hq.y))
+        move = bfs(Point(unit.x, unit.y), Point(enemy_hq.x, enemy_hq.y))
         if move:
             commands.append(f"MOVE {unit.id} {move.x} {move.y}")
 
@@ -172,11 +184,14 @@ def make_move(wealth, gamemap, buildings, units):
 def main():
     mine_spots = initial_input()
     while True:
+        global start_time
+        start_time = time()
         wealth, gamemap, buildings, units = turn_input()
         commands = make_move(wealth, gamemap, buildings, units)
         if commands:
             print(";".join(commands))
         else:
             print("WAIT")
+        #log(start_time - time())
 
 main()
