@@ -34,6 +34,8 @@ class Wealth:
 class G:
     my_units_pos: set = None
     map: list = None
+    mine_spots: list = None
+    border_squares: list = None
 g = G()
 
 def log(x):
@@ -44,7 +46,7 @@ def initial_input():
     mine_spots = []
     for i in range(number_mine_spots):
         x, y = [int(j) for j in input().split()]
-        mine_spots.append((x, y))
+        mine_spots.append(Point(x, y))
     return mine_spots
 
 def turn_input():
@@ -131,13 +133,10 @@ def occupied(point, gamemap, *collections):
 def make_move(wealth, gamemap, buildings, units):
     commands=[]
 
-    global g
-    g = G()
     g.my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
     g.map = gamemap
-
-    # TRAIN
-    spawn_options = set()
+  
+    available_squares = set()
     my_squares = set()
     my_units=[u for u in units if u.owner == Side.ME]
     for x in range(12):
@@ -145,30 +144,36 @@ def make_move(wealth, gamemap, buildings, units):
             if g.map[y][x] == "O":
                 for n in neighbors(Point(x, y)):
                     if not occupied(n, g.map, my_units, buildings):
-                        spawn_options.add(n)
+                        available_squares.add(n)
                 if not occupied(Point(x, y), g.map, my_units, buildings):
-                    spawn_options.add(Point(x, y))
+                    available_squares.add(Point(x, y))
                     my_squares.add(Point(x, y))
     
-    border_squares = list(spawn_options - my_squares)
-
+    g.border_squares = list(available_squares - my_squares)
+    
+    # TRAIN
     enemy_level_1 = [u for u in units if u.owner == Side.THEM and u.level == 1]
     enemy_level_1_positions = {Point(u.x, u.y) for u in enemy_level_1}
-    border_squares_with_level_1_enemies = [s for s in border_squares if s in enemy_level_1_positions]
-    while wealth.gold >= 20 and wealth.income >= 0 and border_squares_with_level_1_enemies:
-        spawn_point = choice(border_squares_with_level_1_enemies)
+    g.border_squares_with_level_1_enemies = [s for s in g.border_squares if s in enemy_level_1_positions]
+    while wealth.gold >= 20 and wealth.income >= 0 and g.border_squares_with_level_1_enemies:
+        spawn_point = choice(g.border_squares_with_level_1_enemies)
         commands.append(f"TRAIN 2 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 20
         wealth.income -= 4
-        border_squares_with_level_1_enemies.remove(spawn_point)
+        g.border_squares_with_level_1_enemies.remove(spawn_point)
     
-    while wealth.gold >= 10 and wealth.income >= 0 and border_squares:
-        spawn_point = choice(border_squares)
+    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares:
+        spawn_point = choice(g.border_squares)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 10
         wealth.income -= 1
-        border_squares.remove(spawn_point)
+        g.border_squares.remove(spawn_point)
 
+    # BUILD
+    for available_mine in set(g.mine_spots) & set(available_squares):
+        if wealth.gold >= 20:
+            commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
+            wealth.gold -= 20
 
     # MOVE
     enemy_hq = [b for b in buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
@@ -182,7 +187,7 @@ def make_move(wealth, gamemap, buildings, units):
     return commands
 
 def main():
-    mine_spots = initial_input()
+    g.mine_spots = initial_input()
     while True:
         global start_time
         start_time = time()
