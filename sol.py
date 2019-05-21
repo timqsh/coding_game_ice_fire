@@ -10,6 +10,12 @@ from time import time
 seed(1337)
 start_time = time()
 
+def recruitment_cost(level):
+    return [10, 20, 30][level-1]
+
+def upkeep_cost(level):
+    return [1, 4, 20][level-1]
+
 class Side(Enum):
     ME = 0
     THEM = 1
@@ -36,6 +42,8 @@ class G:
     map: list = None
     mine_spots: list = None
     border_squares: list = None
+    available_squares: list = None
+    my_units: list = None
 g = G()
 
 def log(x):
@@ -130,38 +138,36 @@ def occupied(point, gamemap, *collections):
         return True
     return False
 
-def make_move(wealth, gamemap, buildings, units):
-    commands=[]
-
+def calculate_globals(gamemap, buildings, units):
     g.my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
     g.map = gamemap
   
-    available_squares = set()
+    g.available_squares = set()
     my_squares = set()
-    my_units=[u for u in units if u.owner == Side.ME]
+    g.my_units=[u for u in units if u.owner == Side.ME]
     for x in range(12):
         for y in range(12):
             if g.map[y][x] == "O":
                 for n in neighbors(Point(x, y)):
-                    if not occupied(n, g.map, my_units, buildings):
-                        available_squares.add(n)
-                if not occupied(Point(x, y), g.map, my_units, buildings):
-                    available_squares.add(Point(x, y))
+                    if not occupied(n, g.map, g.my_units, buildings):
+                        g.available_squares.add(n)
+                if not occupied(Point(x, y), g.map, g.my_units, buildings):
+                    g.available_squares.add(Point(x, y))
                     my_squares.add(Point(x, y))
-    
-    g.border_squares = list(available_squares - my_squares)
-    
-    # TRAIN
-    enemy_level_1 = [u for u in units if u.owner == Side.THEM and u.level == 1]
-    enemy_level_1_positions = {Point(u.x, u.y) for u in enemy_level_1}
-    g.border_squares_with_level_1_enemies = [s for s in g.border_squares if s in enemy_level_1_positions]
-    while wealth.gold >= 20 and wealth.income >= 0 and g.border_squares_with_level_1_enemies:
-        spawn_point = choice(g.border_squares_with_level_1_enemies)
-        commands.append(f"TRAIN 2 {spawn_point.x} {spawn_point.y}")
-        wealth.gold -= 20
-        wealth.income -= 4
-        g.border_squares_with_level_1_enemies.remove(spawn_point)
-    
+    g.border_squares = list(g.available_squares - my_squares)
+
+def kill_by_spawn(enemy_level, my_level, units, wealth, commands):
+    enemy_units = [u for u in units if u.owner == Side.THEM and u.level == enemy_level]
+    enemy_positions = {Point(u.x, u.y) for u in enemy_units}
+    available_enemies = [s for s in g.border_squares if s in enemy_positions]
+    while wealth.gold >= recruitment_cost(my_level) and wealth.income >= 0 and available_enemies:
+        spawn_point = choice(available_enemies)
+        commands.append(f"TRAIN {my_level} {spawn_point.x} {spawn_point.y}")
+        wealth.gold -= recruitment_cost(my_level)
+        wealth.income -= upkeep_cost(my_level)
+        available_enemies.remove(spawn_point)
+
+def spawn_level_1_on_border(wealth, commands):
     while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares:
         spawn_point = choice(g.border_squares)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
@@ -169,8 +175,19 @@ def make_move(wealth, gamemap, buildings, units):
         wealth.income -= 1
         g.border_squares.remove(spawn_point)
 
+def make_move(wealth, gamemap, buildings, units):
+    commands=[]
+
+    calculate_globals(gamemap, buildings, units)
+    
+    # TRAIN
+    kill_by_spawn(3, 3, units, wealth, commands)
+    kill_by_spawn(2, 3, units, wealth, commands)
+    kill_by_spawn(1, 2, units, wealth, commands)
+    spawn_level_1_on_border(wealth, commands)
+
     # BUILD
-    for available_mine in set(g.mine_spots) & set(available_squares):
+    for available_mine in set(g.mine_spots) & set(g.available_squares):
         if wealth.gold >= 20:
             commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
             wealth.gold -= 20
@@ -179,7 +196,7 @@ def make_move(wealth, gamemap, buildings, units):
     enemy_hq = [b for b in buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
     my_hq = [b for b in buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
 
-    for unit in my_units:
+    for unit in g.my_units:
         move = bfs(Point(unit.x, unit.y), Point(enemy_hq.x, enemy_hq.y))
         if move:
             commands.append(f"MOVE {unit.id} {move.x} {move.y}")
