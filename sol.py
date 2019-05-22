@@ -110,11 +110,18 @@ class PriorityQueue:
         self.items = items or []
         heapq.heapify(self.items)
 
+    def __bool__(self):
+        return bool(self.items)
+
     def push(self, item, weight):
         heapq.heappush(self.items, (weight, item))
 
     def pop(self):
-        weight, item = heapq.heappop(self.items)
+        try:
+            weight, item = heapq.heappop(self.items)
+        except Exception as e:
+            log(f"Exception: {self.items}")
+            raise
         return item, weight
 
 def dijkstra(target, starting_points):
@@ -145,6 +152,7 @@ def dijkstra(target, starting_points):
                 add_cost = recruitment_cost(g.point_min_level[pos])
                 prev[pos] = AlgorithmNode(cost=prev_cost+add_cost, prev=cur)
                 q.push(pos, prev_cost+add_cost)
+    return None, math.inf
 
 def bfs(start, end):
 
@@ -186,6 +194,8 @@ def calculate_globals(gamemap, buildings, units):
     g.my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
     g.map = gamemap
   
+    my_buildings = {Point(u.x, u.y) for u in buildings if u.owner == Side.ME}
+
     g.available_squares = set()
     my_squares = set()
     g.my_units=[u for u in units if u.owner == Side.ME]
@@ -193,9 +203,9 @@ def calculate_globals(gamemap, buildings, units):
         for y in range(12):
             if g.map[y][x] == "O":
                 for n in neighbors(Point(x, y)):
-                    if not occupied(n, g.map, g.my_units, buildings):
+                    if not occupied(n, g.map, g.my_units, my_buildings):
                         g.available_squares.add(n)
-                if not occupied(Point(x, y), g.map, g.my_units, buildings):
+                if not occupied(Point(x, y), g.map, g.my_units, my_buildings):
                     g.available_squares.add(Point(x, y))
                     my_squares.add(Point(x, y))
     g.border_squares = list(g.available_squares - my_squares)
@@ -245,17 +255,15 @@ def make_move(wealth, gamemap, buildings, units):
     calculate_globals(gamemap, buildings, units)
     
     solution, cost = dijkstra(Point(enemy_hq.x, enemy_hq.y), g.border_squares)
-    log(f"solution={solution} cost={cost}")
-    log(g.point_min_level)
     if cost <= wealth.gold:
         for elem in solution:
             commands.append(f"TRAIN {elem.level} {elem.x} {elem.y}")
         return commands
 
     # TRAIN
-    #kill_by_spawn(3, 3, units, wealth, commands)
-    #kill_by_spawn(2, 3, units, wealth, commands)
-    #kill_by_spawn(1, 2, units, wealth, commands)
+    kill_by_spawn(3, 3, units, wealth, commands)
+    kill_by_spawn(2, 3, units, wealth, commands)
+    kill_by_spawn(1, 2, units, wealth, commands)
     spawn_level_1_on_border(wealth, commands)
 
     # BUILD
