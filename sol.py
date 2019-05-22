@@ -1,11 +1,12 @@
 
 import sys
 import math
-from collections import namedtuple, deque
+from collections import namedtuple, deque, defaultdict
 from enum import Enum
 from random import randint, choice, shuffle, seed
 from dataclasses import dataclass
 from time import time
+import heapq
 
 seed(1337)
 start_time = time()
@@ -44,6 +45,8 @@ class G:
     border_squares: list = None
     available_squares: list = None
     my_units: list = None
+    enemy_tower_zones: list = None
+    point_min_level: dict = None # Dict[Point, int]
 g = G()
 
 def log(x):
@@ -102,6 +105,47 @@ def neighbors(point, randomize=False):
 
     return res
 
+class PriorityQueue:
+    def __init__(self, items=None):
+        self.items = items or []
+        heapq.heapify(self.items)
+
+    def push(self, item, weight):
+        heapq.heappush(self.items, (weight, item))
+
+    def pop(self):
+        weight, item = heapq.heappop(self.items)
+        return item, weight
+
+def dijkstra(target, starting_points):
+    
+    SolutionNode = namedtuple("SolutionNode", ["x", "y", "level"])
+    AlgorithmNode = namedtuple("AlgorithmNode", ["cost", "prev"])
+    
+    def form_solution(prev, cur):
+        solution = [SolutionNode(cur.x, cur.y, g.point_min_level[cur])]
+        while prev[cur].prev:
+            cur_node = prev[cur]
+            cur_point = cur_node.prev
+            solution.append(SolutionNode(cur_point.x, cur_point.y, g.point_min_level[cur_point]))
+            cur = cur_point
+        cost = sum(recruitment_cost(n.level) for n in solution)
+        return solution, cost 
+
+    q = PriorityQueue()
+    q.push(target, 0)
+    prev = {target: AlgorithmNode(cost=0, prev=None)}
+    while q:
+        cur, cur_weight = q.pop()
+        if cur in starting_points:
+            return form_solution(prev, cur)
+        for pos in neighbors(cur):
+            prev_cost, prev_point = prev[cur]
+            if pos not in prev:
+                add_cost = recruitment_cost(g.point_min_level[pos])
+                prev[pos] = AlgorithmNode(cost=prev_cost+add_cost, prev=cur)
+                q.push(pos, prev_cost+add_cost)
+
 def bfs(start, end):
 
     def next_move(prev):
@@ -156,6 +200,24 @@ def calculate_globals(gamemap, buildings, units):
                     my_squares.add(Point(x, y))
     g.border_squares = list(g.available_squares - my_squares)
 
+    enemy_tower_pos = [Point(b.x, b.y) for b in buildings if b.owner == Side.THEM and b.type == BuildingType.TOWER]
+    active_enemy_tower = [p for p in enemy_tower_pos if g.map[p.y][p.x] == "X"]
+    enemy_tower_neighbors = []
+    for p in active_enemy_tower:
+        enemy_tower_neighbors += neighbors(p)
+    enemy_tower_active_neighbors = [p for p in enemy_tower_neighbors if g.map[p.y][p.x] == "X"]
+    g.enemy_tower_zones = active_enemy_tower + enemy_tower_active_neighbors
+    
+    point_min_level = defaultdict(lambda: 1)
+    for p in g.enemy_tower_zones:
+        point_min_level[p] = 3
+    enemy_units = [u for u in units if u.owner == Side.THEM]
+    for u in enemy_units:
+         level_to_beat_unit = u.level + 1 if u.level < 3 else 3
+         p = Point(u.x, u.y)
+         point_min_level[p] = max(point_min_level[p], level_to_beat_unit)
+    g.point_min_level = point_min_level
+
 def kill_by_spawn(enemy_level, my_level, units, wealth, commands):
     enemy_units = [u for u in units if u.owner == Side.THEM and u.level == enemy_level]
     enemy_positions = {Point(u.x, u.y) for u in enemy_units}
@@ -177,13 +239,23 @@ def spawn_level_1_on_border(wealth, commands):
 
 def make_move(wealth, gamemap, buildings, units):
     commands=[]
+    enemy_hq = [b for b in buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
+    my_hq = [b for b in buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
 
     calculate_globals(gamemap, buildings, units)
     
+    solution, cost = dijkstra(Point(enemy_hq.x, enemy_hq.y), g.border_squares)
+    log(f"solution={solution} cost={cost}")
+    log(g.point_min_level)
+    if cost <= wealth.gold:
+        for elem in solution:
+            commands.append(f"TRAIN {elem.level} {elem.x} {elem.y}")
+        return commands
+
     # TRAIN
-    kill_by_spawn(3, 3, units, wealth, commands)
-    kill_by_spawn(2, 3, units, wealth, commands)
-    kill_by_spawn(1, 2, units, wealth, commands)
+    #kill_by_spawn(3, 3, units, wealth, commands)
+    #kill_by_spawn(2, 3, units, wealth, commands)
+    #kill_by_spawn(1, 2, units, wealth, commands)
     spawn_level_1_on_border(wealth, commands)
 
     # BUILD
@@ -193,9 +265,6 @@ def make_move(wealth, gamemap, buildings, units):
             wealth.gold -= 20
 
     # MOVE
-    enemy_hq = [b for b in buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
-    my_hq = [b for b in buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
-
     for unit in g.my_units:
         move = bfs(Point(unit.x, unit.y), Point(enemy_hq.x, enemy_hq.y))
         if move:
