@@ -314,30 +314,31 @@ def try_cut():
     CELL_FACTOR = 2
     profit = {}
     for b in g.border_squares:
-        cost = recruitment_cost(g.point_min_level[b])
+        # TODO neighbors without my squares
+        cost1 = recruitment_cost(g.point_min_level[b])
         g_new = calc_turn(b, g)
-        unit_gain = units_cost(g.enemy_units) - units_cost(g_new.enemy_units)
-        map_gain = CELL_FACTOR * (map_count("X", g) - map_count("X", g_new))
-        profit[(b,)] = map_gain + unit_gain - cost
+        unit_gain1 = units_cost(g.enemy_units) - units_cost(g_new.enemy_units)
+        map_gain1 = CELL_FACTOR * (map_count("X", g) - map_count("X", g_new))
+        profit[(b,)] = map_gain1 + unit_gain1 - cost1
         # log(f"{b}: {map_gain} + {unit_gain} - {cost}")
         for n1 in neighbors(b):
-            cost += recruitment_cost(g.point_min_level[n1])
+            cost2 = cost1 + recruitment_cost(g.point_min_level[n1])
             g_new_2 = calc_turn(n1, g_new)
-            unit_gain += units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
-            map_gain += CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
-            profit[(b, n1)] = map_gain + unit_gain - cost
+            unit_gain2 = unit_gain1 + units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
+            map_gain2 = map_gain1 + CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
+            profit[(b, n1)] = map_gain2 + unit_gain2 - cost2
             for n2 in neighbors(n1):
-                cost += recruitment_cost(g.point_min_level[n2])
+                cost3 = cost2 + recruitment_cost(g.point_min_level[n2])
                 g_new_3 = calc_turn(n2, g_new_2)
-                unit_gain += units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
-                map_gain += CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
-                profit[(b, n1, n2)] = map_gain + unit_gain - cost
-                # for n3 in neighbors(n2):
-                #     cost += recruitment_cost(g.point_min_level[n3])
-                #     g_new_4 = calc_turn(n3, g_new_3)
-                #     unit_gain += units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
-                #     map_gain += CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
-                #     profit[(b, n1, n2, n3)] = map_gain + unit_gain - cost
+                unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
+                map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
+                profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
+                for n3 in neighbors(n2):
+                    cost4 = cost3 + recruitment_cost(g.point_min_level[n3])
+                    g_new_4 = calc_turn(n3, g_new_3)
+                    unit_gain4 = unit_gain3 + units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
+                    map_gain4 = map_gain3 + CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
+                    profit[(b, n1, n2, n3)] = map_gain4 + unit_gain4 - cost4
 
     best_moves = max(profit, key=profit.get, default=0)
     if profit[best_moves] > 0:
