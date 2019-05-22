@@ -64,7 +64,13 @@ def initial_input():
         mine_spots.append(Point(x, y))
     return mine_spots
 
-def turn_input():
+def turn_input(test=False):
+
+    if test:
+        file = open("in.txt", mode="r")
+        def input():
+            return file.readline()
+
     wealth = Wealth(*(int(input()) for i in range(4)))
     
     gamemap = []
@@ -89,7 +95,7 @@ def turn_input():
 
     return wealth, gamemap, buildings, units
 
-def neighbors(point, randomize=False):
+def neighbors(point, randomize=False, game=None):
     res = []
     if point.x < 11:
         res.append(Point(point.x+1, point.y))
@@ -104,8 +110,9 @@ def neighbors(point, randomize=False):
 
     if randomize:
         shuffle(res)
-        
-    res = [r for r in res if Point(r.x, r.y) not in g.my_units_pos]
+    
+    game = game or g
+    res = [r for r in res if Point(r.x, r.y) not in game.my_units_pos]
 
     return res
 
@@ -269,44 +276,74 @@ def dfs_enemy(start, g_new:G, debug=False):
     for n in enemy_neighbors(start, g_new):
         dfs_enemy(n, g_new, debug)
 
-def calc_turn(p:Point):
+def calc_turn(p:Point, g_old):
     # debug = p == Point(3,8)
     g_new = G()
     #g.border_squares TODO
+
+    g_new.my_units_pos = deepcopy(g_old.my_units_pos)
+    g_new.my_units_pos.add(p)
+    g_new.enemy_hq = g_old.enemy_hq
+
     g_new.map = []
-    for row in g.map:
+    for row in g_old.map:
         g_new.map.append( ["x" if c=="X" else c for c in row] )
     # if debug:
     #     log(f"old   : {g_new.map}")
     g_new.map[p.y][p.x] = "O"
     # if debug:
     #     log(f"before: {g_new.map}")
-    dfs_enemy(g.enemy_hq, g_new, debug=False)
+    dfs_enemy(g_old.enemy_hq, g_new, debug=False)
     # if debug:
     #     log(f"after : {g_new.map}")
 
     g_new.enemy_units = []
-    for u in g.enemy_units:
+    for u in g_old.enemy_units:
         if g_new.map[u.y][u.x] == "X":
             g_new.enemy_units.append(Unit(*u))
 
     return g_new
 
+def units_cost(units):
+    return sum(recruitment_cost(u.level) for u in units)
+
+def map_count(char, game):
+    return sum(row.count(char) for row in game.map)
+
 def try_cut():
+    CELL_FACTOR = 2
     profit = {}
     for b in g.border_squares:
         cost = recruitment_cost(g.point_min_level[b])
-        g_new = calc_turn(b)
-        units_cost = lambda units: sum(recruitment_cost(u.level) for u in units)
+        g_new = calc_turn(b, g)
         unit_gain = units_cost(g.enemy_units) - units_cost(g_new.enemy_units)
-        map_count = lambda char, game: sum(row.count(char) for row in game.map)
-        factor = 2
-        map_gain = factor * (map_count("X", g) - map_count("X", g_new))
-        profit[b] = map_gain + unit_gain - cost
+        map_gain = CELL_FACTOR * (map_count("X", g) - map_count("X", g_new))
+        profit[(b,)] = map_gain + unit_gain - cost
         # log(f"{b}: {map_gain} + {unit_gain} - {cost}")
-    best_move = max(profit, key=profit.get, default=0)
-    if profit[best_move] > 0:
-        return best_move
+        for n1 in neighbors(b):
+            cost += recruitment_cost(g.point_min_level[n1])
+            g_new_2 = calc_turn(n1, g_new)
+            unit_gain += units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
+            map_gain += CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
+            profit[(b, n1)] = map_gain + unit_gain - cost
+            for n2 in neighbors(n1):
+                cost += recruitment_cost(g.point_min_level[n2])
+                g_new_3 = calc_turn(n2, g_new_2)
+                unit_gain += units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
+                map_gain += CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
+                profit[(b, n1, n2)] = map_gain + unit_gain - cost
+                # for n3 in neighbors(n2):
+                #     cost += recruitment_cost(g.point_min_level[n3])
+                #     g_new_4 = calc_turn(n3, g_new_3)
+                #     unit_gain += units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
+                #     map_gain += CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
+                #     profit[(b, n1, n2, n3)] = map_gain + unit_gain - cost
+
+    best_moves = max(profit, key=profit.get, default=0)
+    if profit[best_moves] > 0:
+        return best_moves
+    else:
+        return []
 
 def make_move(wealth, gamemap, buildings, units):
     commands=[]
@@ -321,9 +358,10 @@ def make_move(wealth, gamemap, buildings, units):
         return commands
 
     # TRY CUT
-    point = try_cut()
-    if point:
-        commands.append(f"TRAIN {g.point_min_level[point]} {point.x} {point.y}")
+    best_moves = try_cut()
+    if best_moves:
+        for point in best_moves:
+            commands.append(f"TRAIN {g.point_min_level[point]} {point.x} {point.y}")
 
     # TRAIN
     #kill_by_spawn(3, 3, units, wealth, commands)
@@ -346,11 +384,21 @@ def make_move(wealth, gamemap, buildings, units):
     return commands
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "test":
+        wealth, gamemap, buildings, units = turn_input(test=True)
+        commands = make_move(wealth, gamemap, buildings, units)
+        print(";".join(commands))
+        return
+    ###
     g.mine_spots = initial_input()
     while True:
         global start_time
         start_time = time()
         wealth, gamemap, buildings, units = turn_input()
+        log(wealth)
+        log(gamemap)
+        log(buildings)
+        log(units)
         commands = make_move(wealth, gamemap, buildings, units)
         if commands:
             print(";".join(commands))
