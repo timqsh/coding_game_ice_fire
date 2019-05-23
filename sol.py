@@ -171,25 +171,6 @@ def dijkstra(target, starting_points):
                 q.push(pos, prev_cost+add_cost)
     return None, math.inf
 
-def bfs(start, end):
-    def next_move(prev):
-        cur = end
-        while prev[prev[cur]]:
-            cur = prev[cur]
-        return cur
-
-    q = deque()
-    q.append(start)
-    prev = {start: None}
-    while q:
-        cur = q.popleft()
-        if cur == end:
-            return next_move(prev)
-        for pos in neighbors(cur, randomize=True):
-            if pos not in prev:
-                prev[pos] = cur
-                q.append(pos)
-
 def choose_move(unit):
     prior = {
         "X":0,
@@ -201,7 +182,6 @@ def choose_move(unit):
     p = Point(unit.x, unit.y)
     available_neighbors = [n for n in neighbors(p) if g.point_min_level[n] <= unit.level]
     return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
-
 
 def occupied(point, gamemap, *collections):
     for collection in collections:
@@ -361,50 +341,32 @@ def map_count(char, game):
 def try_cut(budget):
     CELL_FACTOR = 2
     UPKEEP_FACTOR = 2
-    profit = {}
-    for b in g.border_squares:
-        # TODO учитывать раскрашивание своих неактивных
-        g_new = calc_spawn(b, g)
-        price1 = recruitment_cost(g.point_min_level[b])
-        cost1 = price1 + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[b])
-        if price1 > budget:
+    #
+    price = {():0}
+    profit = {():0}
+    worlds = {():g}
+    q = deque((b,) for b in g.border_squares)
+    while q:
+        moves = q.popleft()
+        need_lvl = g.point_min_level[moves[0]]
+        price[moves] = price[moves[1:]] + recruitment_cost(need_lvl)
+        if price[moves] > budget:
             continue
-        unit_gain1 = units_cost(g.enemy_units) - units_cost(g_new.enemy_units)
-        map_gain1 = CELL_FACTOR * (map_count("X", g) - map_count("X", g_new))
-        profit[(b,)] = map_gain1 + unit_gain1 - cost1
-        for n1 in neighbors(b, notmine=True):
-            g_new_2 = calc_spawn(n1, g_new)
-            price2 = price1 + recruitment_cost(g.point_min_level[n1])
-            cost2 = cost1 + recruitment_cost(g.point_min_level[n1]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n1])
-            if price2 > budget:
-                continue
-            unit_gain2 = unit_gain1 + units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
-            map_gain2 = map_gain1 + CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
-            profit[(b, n1)] = map_gain2 + unit_gain2 - cost2
-            for n2 in neighbors(n1, notmine=True):
-                g_new_3 = calc_spawn(n2, g_new_2)
-                price3 = price2 + recruitment_cost(g.point_min_level[n2])
-                cost3 = cost2 + recruitment_cost(g.point_min_level[n2]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n2])
-                if price3 > budget:
-                    continue
-                unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
-                map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
-                profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
-                # for n3 in neighbors(n2, notmine=True):
-                #     g_new_4 = calc_spawn(n3, g_new_3)
-                #     price4 = price3 + recruitment_cost(g.point_min_level[n3])
-                #     if price4 > budget:
-                #         continue
-                #     cost4 = cost3 + recruitment_cost(g.point_min_level[n3]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n3])
-                #     unit_gain4 = unit_gain3 + units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
-                #     map_gain4 = map_gain3 + CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
-                #     profit[(b, n1, n2, n3)] = map_gain4 + unit_gain4 - cost4
-
+        old_world = worlds[moves[1:]]
+        new_world = calc_spawn(moves[0], old_world)
+        worlds[moves] = new_world
+        unit_gain = units_cost(old_world.enemy_units) - units_cost(new_world.enemy_units)
+        map_gain = CELL_FACTOR * (map_count("X", old_world) - map_count("X", new_world))
+        cost = recruitment_cost(need_lvl) + UPKEEP_FACTOR * upkeep_cost(need_lvl)
+        profit[moves] = profit[moves[1:]] + map_gain + unit_gain - cost
+        if len(moves) < 3:
+            for n in neighbors(moves[0], notmine=True):
+                q.append(tuple([n,*moves]))
     if profit:
         best_moves = max(profit, key=profit.get)
         if profit[best_moves] > 0:
             log(f"profit={profit[best_moves]}, {len(best_moves)} turns")
-            return best_moves
+            return reversed(best_moves)
     return []
 
 def make_move():
@@ -416,7 +378,6 @@ def make_move():
     # MOVE
     for unit in g.my_units:
         move = choose_move(unit)
-        #move = move or bfs(Point(unit.x, unit.y), g.enemy_hq)
         if move:
             g = calc_move(unit, move, g)
             commands.append(f"MOVE {unit.id} {move.x} {move.y}")
@@ -434,6 +395,7 @@ def make_move():
         for point in best_moves:
             g_new = calc_spawn(point, g)
             g.enemy_units = g_new.enemy_units
+            g.wealth.gold -= recruitment_cost(g.point_min_level[point])
             commands.append(f"TRAIN {g.point_min_level[point]} {point.x} {point.y}")
 
     # TRAIN
