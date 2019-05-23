@@ -99,31 +99,22 @@ def turn_input(input):
 
     return wealth, gamemap, buildings, units
 
-def neighbors(point, randomize=False, game=None, notmine=False):
+def neighbors(point, game=None, notmine=False):
     res = []
-
+    game = game or g
     if g.enemy_hq.x == 0:
         directions = [(-1,0),(0,-1),(1,0),(0,1)]
     else:
         directions = [(1,0),(0,1),(-1,0),(0,-1)]
-
     for d in directions:
         new_x = point.x + d[0]
         new_y = point.y + d[1]
         if 0 <= new_x <= 11 and 0 <= new_y <= 11:
             res.append(Point(new_x, new_y))
-
     if notmine:
         res = [r for r in res if g.map[r.y][r.x] != "O"]    
-
     res = [r for r in res if g.map[r.y][r.x] != "#"]
-
-    if randomize:
-        shuffle(res)
-    
-    game = game or g
     res = [r for r in res if Point(r.x, r.y) not in game.my_units_pos]
-
     return res
 
 class PriorityQueue:
@@ -341,7 +332,6 @@ def map_count(char, game):
 def try_cut(budget):
     CELL_FACTOR = 2
     UPKEEP_FACTOR = 2
-    #
     price = {():0}
     profit = {():0}
     worlds = {():g}
@@ -372,9 +362,8 @@ def try_cut(budget):
 def make_move():
     global g
     commands=[]
-
     calculate_globals()
-    
+
     # MOVE
     for unit in g.my_units:
         move = choose_move(unit)
@@ -404,7 +393,7 @@ def make_move():
     kill_by_spawn(1, 2, g.wealth, commands)
     spawn_level_1_on_border(g.wealth, commands)
 
-    # BUILD
+    # BUILD MINES
     # for available_mine in set(g.mine_spots) & set(g.available_squares):
     #     if wealth.gold >= 20:
     #         commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
