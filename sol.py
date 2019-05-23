@@ -138,11 +138,7 @@ class PriorityQueue:
         heapq.heappush(self.items, (weight, item))
 
     def pop(self):
-        try:
-            weight, item = heapq.heappop(self.items)
-        except Exception as e:
-            # log(f"Exception: {self.items}")
-            raise
+        weight, item = heapq.heappop(self.items)
         return item, weight
 
 def dijkstra(target, starting_points):
@@ -350,8 +346,6 @@ def kill_by_spawn(enemy_level, my_level, wealth, commands):
 
 def spawn_level_1_on_border(wealth, commands):    
     while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 10:
-        log(wealth)
-        log(len(g.my_units_pos))
         spawn_point = choice(g.border_squares)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 10
@@ -387,15 +381,15 @@ def try_cut(budget):
             unit_gain2 = unit_gain1 + units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
             map_gain2 = map_gain1 + CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
             profit[(b, n1)] = map_gain2 + unit_gain2 - cost2
-            # for n2 in neighbors(n1, notmine=True):
-            #     g_new_3 = calc_spawn(n2, g_new_2)
-            #     price3 = price2 + recruitment_cost(g.point_min_level[n2])
-            #     cost3 = cost2 + recruitment_cost(g.point_min_level[n2]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n2])
-            #     if price3 > budget:
-            #         continue
-            #     unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
-            #     map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
-            #     profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
+            for n2 in neighbors(n1, notmine=True):
+                g_new_3 = calc_spawn(n2, g_new_2)
+                price3 = price2 + recruitment_cost(g.point_min_level[n2])
+                cost3 = cost2 + recruitment_cost(g.point_min_level[n2]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n2])
+                if price3 > budget:
+                    continue
+                unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
+                map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
+                profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
                 # for n3 in neighbors(n2, notmine=True):
                 #     g_new_4 = calc_spawn(n3, g_new_3)
                 #     price4 = price3 + recruitment_cost(g.point_min_level[n3])
@@ -409,7 +403,7 @@ def try_cut(budget):
     if profit:
         best_moves = max(profit, key=profit.get)
         if profit[best_moves] > 0:
-            log(f"profit={profit[best_moves]}")
+            log(f"profit={profit[best_moves]}, {len(best_moves)} turns")
             return best_moves
     return []
 
