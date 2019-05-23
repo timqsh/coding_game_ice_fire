@@ -7,7 +7,7 @@ from random import randint, choice, shuffle, seed
 from dataclasses import dataclass
 from time import time
 import heapq
-from copy import deepcopy
+from copy import copy, deepcopy
 
 seed(1337)
 start_time = time()
@@ -40,17 +40,26 @@ class Wealth:
 
 @dataclass
 class G:
-    my_units_pos: set = None
-    map: list = None
     mine_spots: list = None
-    border_squares: list = None
-    available_squares: list = None
-    my_units: list = None
-    enemy_tower_zones: list = None
-    point_min_level: dict = None # Dict[Point, int]
+        
     my_hq: Point = None
     enemy_hq: Point = None
+
+    map: list = None
+    units: list = None
+    buildings: list = None
+    wealth: Wealth = None
+    
     enemy_units: list = None
+    my_units: list = None
+    my_units_pos: set = None
+
+    border_squares: list = None
+    available_squares: list = None
+    
+    enemy_tower_zones: list = None
+    point_min_level: dict = None # Dict[Point, int]
+
 g = G()
 
 def log(x):
@@ -64,12 +73,7 @@ def initial_input():
         mine_spots.append(Point(x, y))
     return mine_spots
 
-def turn_input(test=False):
-
-    if test:
-        file = open("in.txt", mode="r")
-        def input():
-            return file.readline()
+def turn_input(input):
 
     wealth = Wealth(*(int(input()) for i in range(4)))
     
@@ -95,16 +99,22 @@ def turn_input(test=False):
 
     return wealth, gamemap, buildings, units
 
-def neighbors(point, randomize=False, game=None):
+def neighbors(point, randomize=False, game=None, notmine=False):
     res = []
-    if point.x < 11:
-        res.append(Point(point.x+1, point.y))
-    if point.x > 0:
-        res.append(Point(point.x-1, point.y))
-    if point.y < 11:
-        res.append(Point(point.x, point.y+1))
-    if point.y > 0:
-        res.append(Point(point.x, point.y-1))
+
+    if g.enemy_hq.x == 0:
+        directions = [(-1,0),(0,-1),(1,0),(0,1)]
+    else:
+        directions = [(1,0),(0,1),(-1,0),(0,-1)]
+
+    for d in directions:
+        new_x = point.x + d[0]
+        new_y = point.y + d[1]
+        if 0 <= new_x <= 11 and 0 <= new_y <= 11:
+            res.append(Point(new_x, new_y))
+
+    if notmine:
+        res = [r for r in res if g.map[r.y][r.x] != "O"]    
 
     res = [r for r in res if g.map[r.y][r.x] != "#"]
 
@@ -131,7 +141,7 @@ class PriorityQueue:
         try:
             weight, item = heapq.heappop(self.items)
         except Exception as e:
-            log(f"Exception: {self.items}")
+            # log(f"Exception: {self.items}")
             raise
         return item, weight
 
@@ -184,6 +194,19 @@ def bfs(start, end):
                 prev[pos] = cur
                 q.append(pos)
 
+def choose_move(unit):
+    prior = {
+        "X":0,
+        "x":1,
+        "o":2,
+        ".":3,
+        "O":4,
+    }
+    p = Point(unit.x, unit.y)
+    available_neighbors = [n for n in neighbors(p) if g.point_min_level[n] <= unit.level]
+    return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
+
+
 def occupied(point, gamemap, *collections):
     for collection in collections:
         for item in collection:
@@ -193,31 +216,32 @@ def occupied(point, gamemap, *collections):
         return True
     return False
 
-def calculate_globals(gamemap, buildings, units):
-    g.enemy_hq = [Point(b.x, b.y) for b in buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
-    g.my_hq = [Point(b.x, b.y) for b in buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
-
-    g.enemy_units = [u for u in units if u.owner == Side.THEM]
-    g.my_units_pos={Point(u.x, u.y) for u in units if u.owner == Side.ME}
-    g.map = gamemap
-  
-    my_buildings = {Point(u.x, u.y) for u in buildings if u.owner == Side.ME}
-
-    g.available_squares = set()
+def calc_border_squares(game):
+    my_buildings = {Point(u.x, u.y) for u in game.buildings if u.owner == Side.ME}
+    game.available_squares = set()
     my_squares = set()
-    g.my_units=[u for u in units if u.owner == Side.ME]
     for x in range(12):
         for y in range(12):
-            if g.map[y][x] == "O":
+            if game.map[y][x] == "O":
                 for n in neighbors(Point(x, y)):
-                    if not occupied(n, g.map, g.my_units, my_buildings):
-                        g.available_squares.add(n)
-                if not occupied(Point(x, y), g.map, g.my_units, my_buildings):
-                    g.available_squares.add(Point(x, y))
+                    if not occupied(n, game.map, game.my_units, my_buildings):
+                        game.available_squares.add(n)
+                if not occupied(Point(x, y), game.map, game.my_units, my_buildings):
+                    game.available_squares.add(Point(x, y))
                     my_squares.add(Point(x, y))
-    g.border_squares = list(g.available_squares - my_squares)
+    game.border_squares = list(game.available_squares - my_squares)
 
-    enemy_tower_pos = [Point(b.x, b.y) for b in buildings if b.owner == Side.THEM and b.type == BuildingType.TOWER]
+def calculate_globals():
+    g.enemy_hq = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
+    g.my_hq = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
+
+    g.my_units=[u for u in g.units if u.owner == Side.ME]
+    g.enemy_units = [u for u in g.units if u.owner == Side.THEM]
+    g.my_units_pos={Point(u.x, u.y) for u in g.units if u.owner == Side.ME}
+
+    calc_border_squares(g)
+
+    enemy_tower_pos = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.THEM and b.type == BuildingType.TOWER]
     active_enemy_tower = [p for p in enemy_tower_pos if g.map[p.y][p.x] == "X"]
     enemy_tower_neighbors = []
     for p in active_enemy_tower:
@@ -228,31 +252,11 @@ def calculate_globals(gamemap, buildings, units):
     point_min_level = defaultdict(lambda: 1)
     for p in g.enemy_tower_zones:
         point_min_level[p] = 3
-    enemy_units = [u for u in units if u.owner == Side.THEM]
-    for u in enemy_units:
+    for u in g.enemy_units:
          level_to_beat_unit = u.level + 1 if u.level < 3 else 3
          p = Point(u.x, u.y)
          point_min_level[p] = max(point_min_level[p], level_to_beat_unit)
     g.point_min_level = point_min_level
-
-def kill_by_spawn(enemy_level, my_level, units, wealth, commands):
-    enemy_units = [u for u in units if u.owner == Side.THEM and u.level == enemy_level]
-    enemy_positions = {Point(u.x, u.y) for u in enemy_units}
-    available_enemies = [s for s in g.border_squares if s in enemy_positions]
-    while wealth.gold >= recruitment_cost(my_level) and wealth.income >= 0 and available_enemies:
-        spawn_point = choice(available_enemies)
-        commands.append(f"TRAIN {my_level} {spawn_point.x} {spawn_point.y}")
-        wealth.gold -= recruitment_cost(my_level)
-        wealth.income -= upkeep_cost(my_level)
-        available_enemies.remove(spawn_point)
-
-def spawn_level_1_on_border(wealth, commands):
-    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 10:
-        spawn_point = choice(g.border_squares)
-        commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
-        wealth.gold -= 10
-        wealth.income -= 1
-        g.border_squares.remove(spawn_point)
 
 def enemy_neighbors(point, g_new):
     res = []
@@ -269,34 +273,23 @@ def enemy_neighbors(point, g_new):
 
     return res
 
-def dfs_enemy(start, g_new:G, debug=False):
-    # if debug:
-    #     log(f"dfs: {start}")
+def dfs_enemy(start, g_new:G):
     g_new.map[start.y][start.x] = "X"
     for n in enemy_neighbors(start, g_new):
-        dfs_enemy(n, g_new, debug)
+        dfs_enemy(n, g_new)
 
-def calc_turn(p:Point, g_old):
-    # debug = p == Point(3,8)
+def calc_spawn(p: Point, g_old):
     g_new = G()
-    #g.border_squares TODO
-
-    g_new.my_units_pos = deepcopy(g_old.my_units_pos)
-    g_new.my_units_pos.add(p)
+    g_new.my_hq = g_old.my_hq
     g_new.enemy_hq = g_old.enemy_hq
 
     g_new.map = []
     for row in g_old.map:
         g_new.map.append( ["x" if c=="X" else c for c in row] )
-    # if debug:
-    #     log(f"old   : {g_new.map}")
     g_new.map[p.y][p.x] = "O"
-    # if debug:
-    #     log(f"before: {g_new.map}")
-    dfs_enemy(g_old.enemy_hq, g_new, debug=False)
-    # if debug:
-    #     log(f"after : {g_new.map}")
-
+    dfs_enemy(g_old.enemy_hq, g_new)
+    # TODO dfs_my (inactive to active)
+    
     g_new.enemy_units = []
     for u in g_old.enemy_units:
         if g_new.map[u.y][u.x] == "X":
@@ -304,71 +297,156 @@ def calc_turn(p:Point, g_old):
 
     return g_new
 
+def calc_move(unit:Unit, dest:Point, g_old:G):
+    g_new = G()
+    g_new.mine_spots = g_old.mine_spots
+    g_new.my_hq = g_old.my_hq
+    g_new.enemy_hq = g_old.enemy_hq
+    
+    g_new.units = copy(g_old.units)
+    g_new.units.remove(unit)
+    g_new.units.append(Unit(owner=Side.ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y))
+
+    g_new.my_units = copy(g_old.my_units)
+    g_new.my_units.remove(unit)
+    g_new.my_units.append(Unit(owner=Side.ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y))
+
+    g_new.buildings = copy(g_old.buildings)
+    g_new.wealth = copy(g_old.wealth)
+
+    g_new.enemy_tower_zones = copy(g_old.enemy_tower_zones)
+    g_new.point_min_level = copy(g_old.point_min_level)
+    
+    g_new.map = []
+    for row in g_old.map:
+        g_new.map.append( ["x" if c=="X" else c for c in row] )
+    g_new.map[dest.y][dest.x] = "O"
+    dfs_enemy(g_old.enemy_hq, g_new)
+    # TODO dfs_my (inactive to active) 
+    
+    calc_border_squares(g_new)
+
+    g_new.my_units_pos = copy(g_old.my_units_pos)
+    g_new.my_units_pos.remove(Point(unit.x, unit.y))
+    g_new.my_units_pos.add(dest)
+
+    # Они уйдут только на следующем ходу
+    g_new.enemy_units = copy(g_old.enemy_units)
+    # for u in g_old.enemy_units:
+    #     if g_new.map[u.y][u.x] == "X":
+    #         g_new.enemy_units.append(Unit(*u))
+
+    return g_new
+
+def kill_by_spawn(enemy_level, my_level, wealth, commands):
+    enemy_positions = {Point(u.x, u.y) for u in g.enemy_units}
+    available_enemies = [s for s in g.border_squares if s in enemy_positions]
+    while wealth.gold >= recruitment_cost(my_level) and wealth.income >= 0 and available_enemies:
+        spawn_point = choice(available_enemies)
+        commands.append(f"TRAIN {my_level} {spawn_point.x} {spawn_point.y}")
+        wealth.gold -= recruitment_cost(my_level)
+        wealth.income -= upkeep_cost(my_level)
+        available_enemies.remove(spawn_point)
+
+def spawn_level_1_on_border(wealth, commands):    
+    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 10:
+        log(wealth)
+        log(len(g.my_units_pos))
+        spawn_point = choice(g.border_squares)
+        commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
+        wealth.gold -= 10
+        wealth.income -= 1
+        g.border_squares.remove(spawn_point)
+
 def units_cost(units):
     return sum(recruitment_cost(u.level) for u in units)
 
 def map_count(char, game):
     return sum(row.count(char) for row in game.map)
 
-def try_cut():
+def try_cut(budget):
     CELL_FACTOR = 2
+    UPKEEP_FACTOR = 2
     profit = {}
     for b in g.border_squares:
-        # TODO neighbors without my squares
-        cost1 = recruitment_cost(g.point_min_level[b])
-        g_new = calc_turn(b, g)
+        # TODO учитывать раскрашивание своих неактивных
+        g_new = calc_spawn(b, g)
+        price1 = recruitment_cost(g.point_min_level[b])
+        cost1 = price1 + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[b])
+        if price1 > budget:
+            continue
         unit_gain1 = units_cost(g.enemy_units) - units_cost(g_new.enemy_units)
         map_gain1 = CELL_FACTOR * (map_count("X", g) - map_count("X", g_new))
         profit[(b,)] = map_gain1 + unit_gain1 - cost1
-        # log(f"{b}: {map_gain} + {unit_gain} - {cost}")
-        for n1 in neighbors(b):
-            cost2 = cost1 + recruitment_cost(g.point_min_level[n1])
-            g_new_2 = calc_turn(n1, g_new)
+        for n1 in neighbors(b, notmine=True):
+            g_new_2 = calc_spawn(n1, g_new)
+            price2 = price1 + recruitment_cost(g.point_min_level[n1])
+            cost2 = cost1 + recruitment_cost(g.point_min_level[n1]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n1])
+            if price2 > budget:
+                continue
             unit_gain2 = unit_gain1 + units_cost(g_new.enemy_units) - units_cost(g_new_2.enemy_units)
             map_gain2 = map_gain1 + CELL_FACTOR * (map_count("X", g_new) - map_count("X", g_new_2))
             profit[(b, n1)] = map_gain2 + unit_gain2 - cost2
-            for n2 in neighbors(n1):
-                cost3 = cost2 + recruitment_cost(g.point_min_level[n2])
-                g_new_3 = calc_turn(n2, g_new_2)
-                unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
-                map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
-                profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
-                for n3 in neighbors(n2):
-                    cost4 = cost3 + recruitment_cost(g.point_min_level[n3])
-                    g_new_4 = calc_turn(n3, g_new_3)
-                    unit_gain4 = unit_gain3 + units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
-                    map_gain4 = map_gain3 + CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
-                    profit[(b, n1, n2, n3)] = map_gain4 + unit_gain4 - cost4
+            # for n2 in neighbors(n1, notmine=True):
+            #     g_new_3 = calc_spawn(n2, g_new_2)
+            #     price3 = price2 + recruitment_cost(g.point_min_level[n2])
+            #     cost3 = cost2 + recruitment_cost(g.point_min_level[n2]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n2])
+            #     if price3 > budget:
+            #         continue
+            #     unit_gain3 = unit_gain2 + units_cost(g_new_2.enemy_units) - units_cost(g_new_3.enemy_units)
+            #     map_gain3 = map_gain2 + CELL_FACTOR * (map_count("X", g_new_2) - map_count("X", g_new_3))
+            #     profit[(b, n1, n2)] = map_gain3 + unit_gain3 - cost3
+                # for n3 in neighbors(n2, notmine=True):
+                #     g_new_4 = calc_spawn(n3, g_new_3)
+                #     price4 = price3 + recruitment_cost(g.point_min_level[n3])
+                #     if price4 > budget:
+                #         continue
+                #     cost4 = cost3 + recruitment_cost(g.point_min_level[n3]) + UPKEEP_FACTOR * upkeep_cost(g.point_min_level[n3])
+                #     unit_gain4 = unit_gain3 + units_cost(g_new_3.enemy_units) - units_cost(g_new_4.enemy_units)
+                #     map_gain4 = map_gain3 + CELL_FACTOR * (map_count("X", g_new_3) - map_count("X", g_new_4))
+                #     profit[(b, n1, n2, n3)] = map_gain4 + unit_gain4 - cost4
 
-    best_moves = max(profit, key=profit.get, default=0)
-    if profit[best_moves] > 0:
-        return best_moves
-    else:
-        return []
+    if profit:
+        best_moves = max(profit, key=profit.get)
+        if profit[best_moves] > 0:
+            log(f"profit={profit[best_moves]}")
+            return best_moves
+    return []
 
-def make_move(wealth, gamemap, buildings, units):
+def make_move():
+    global g
     commands=[]
 
-    calculate_globals(gamemap, buildings, units)
+    calculate_globals()
     
+    # MOVE
+    for unit in g.my_units:
+        move = choose_move(unit)
+        #move = move or bfs(Point(unit.x, unit.y), g.enemy_hq)
+        if move:
+            g = calc_move(unit, move, g)
+            commands.append(f"MOVE {unit.id} {move.x} {move.y}")
+
     # TRY INSTANT KILL
     solution, cost = dijkstra(g.enemy_hq, g.border_squares)
-    if cost <= wealth.gold:
+    if cost <= g.wealth.gold and solution:
         for elem in solution:
             commands.append(f"TRAIN {elem.level} {elem.x} {elem.y}")
         return commands
 
     # TRY CUT
-    best_moves = try_cut()
+    best_moves = try_cut(g.wealth.gold)
     if best_moves:
         for point in best_moves:
+            g_new = calc_spawn(point, g)
+            g.enemy_units = g_new.enemy_units
             commands.append(f"TRAIN {g.point_min_level[point]} {point.x} {point.y}")
 
     # TRAIN
-    #kill_by_spawn(3, 3, units, wealth, commands)
-    #kill_by_spawn(2, 3, units, wealth, commands)
-    #kill_by_spawn(1, 2, units, wealth, commands)
-    spawn_level_1_on_border(wealth, commands)
+    #kill_by_spawn(3, 3, wealth, commands)
+    #kill_by_spawn(2, 3, wealth, commands)
+    kill_by_spawn(1, 2, g.wealth, commands)
+    spawn_level_1_on_border(g.wealth, commands)
 
     # BUILD
     # for available_mine in set(g.mine_spots) & set(g.available_squares):
@@ -376,18 +454,15 @@ def make_move(wealth, gamemap, buildings, units):
     #         commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
     #         wealth.gold -= 20
 
-    # MOVE
-    for unit in g.my_units:
-        move = bfs(Point(unit.x, unit.y), g.enemy_hq)
-        if move:
-            commands.append(f"MOVE {unit.id} {move.x} {move.y}")
-
     return commands
 
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == "test":
-        wealth, gamemap, buildings, units = turn_input(test=True)
-        commands = make_move(wealth, gamemap, buildings, units)
+        file = open("in.txt", mode="r")
+        def test_input():
+            return file.readline()
+        g.wealth, g.map, g.buildings, g.units = turn_input(test_input)
+        commands = make_move()
         print(";".join(commands))
         return
     ###
@@ -395,12 +470,8 @@ def main():
     while True:
         global start_time
         start_time = time()
-        wealth, gamemap, buildings, units = turn_input()
-        log(wealth)
-        log(gamemap)
-        log(buildings)
-        log(units)
-        commands = make_move(wealth, gamemap, buildings, units)
+        g.wealth, g.map, g.buildings, g.units = turn_input(input)
+        commands = make_move()
         if commands:
             print(";".join(commands))
         else:
