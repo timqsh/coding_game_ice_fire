@@ -99,6 +99,15 @@ def turn_input(input):
 
     return wealth, gamemap, buildings, units
 
+def point_playable(p):
+    return 0 <= p.x <= 11 and 0 <= p.y <= 11 and g.map[p.y][p.x] != "#"
+
+def my_point(p):
+    return g.map[p.y][p.x] == "O"
+
+def my_unit(p, game):
+    return p in game.my_units_pos
+
 def neighbors(point, game=None, notmine=False):
     res = []
     game = game or g
@@ -107,14 +116,12 @@ def neighbors(point, game=None, notmine=False):
     else:
         directions = [(1,0),(0,1),(-1,0),(0,-1)]
     for d in directions:
-        new_x = point.x + d[0]
-        new_y = point.y + d[1]
-        if 0 <= new_x <= 11 and 0 <= new_y <= 11:
-            res.append(Point(new_x, new_y))
-    if notmine:
-        res = [r for r in res if g.map[r.y][r.x] != "O"]    
-    res = [r for r in res if g.map[r.y][r.x] != "#"]
-    res = [r for r in res if Point(r.x, r.y) not in game.my_units_pos]
+        p = Point(point.x + d[0], point.y + d[1])
+        if not point_playable(p):
+            continue
+        if (notmine and my_point(p)) or my_unit(p, game):
+            continue
+        res.append(p)        
     return res
 
 class PriorityQueue:
@@ -255,7 +262,7 @@ def calc_spawn(p: Point, g_old):
         g_new.map.append( ["x" if c=="X" else c for c in row] )
     g_new.map[p.y][p.x] = "O"
     dfs_enemy(g_old.enemy_hq, g_new)
-    # TODO dfs_my (inactive to active)
+    # TODO dfs_my (inactive to active) чтобы точнее оценивать профит
     
     g_new.enemy_units = []
     for u in g_old.enemy_units:
@@ -289,7 +296,7 @@ def calc_move(unit:Unit, dest:Point, g_old:G):
         g_new.map.append( ["x" if c=="X" else c for c in row] )
     g_new.map[dest.y][dest.x] = "O"
     dfs_enemy(g_old.enemy_hq, g_new)
-    # TODO dfs_my (inactive to active) 
+    # TODO dfs_my (inactive to active) чтобы после хода было больше опций для вызова
     
     calc_border_squares(g_new)
 
@@ -315,9 +322,12 @@ def kill_by_spawn(enemy_level, my_level, wealth, commands):
         wealth.income -= upkeep_cost(my_level)
         available_enemies.remove(spawn_point)
 
+def dist_to_enemy_hq(p:Point):
+    return abs(p.x - g.enemy_hq.x) + abs(p.y - g.enemy_hq.y)
+
 def spawn_level_1_on_border(wealth, commands):    
-    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 10:
-        spawn_point = choice(g.border_squares)
+    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 5:
+        spawn_point = min(g.border_squares, key=dist_to_enemy_hq)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 10
         wealth.income -= 1
@@ -359,6 +369,42 @@ def try_cut(budget):
             return reversed(best_moves)
     return []
 
+def try_cut_straight(budget):
+    CELL_FACTOR = 2
+    UPKEEP_FACTOR = 2
+    directions = [(-1,0),(0,-1),(1,0),(0,1)]
+    
+    price = {():0}
+    profit = {():0}
+    worlds = {():g}
+    q = deque(((b,), d) for b in g.border_squares for d in directions)
+    while q:
+        moves, direction = q.popleft()        
+        need_lvl = g.point_min_level[moves[0]]
+        price[moves] = price[moves[1:]] + recruitment_cost(need_lvl)
+        if price[moves] > budget:
+            continue
+        old_world = worlds[moves[1:]]
+        if moves not in worlds:
+            new_world = calc_spawn(moves[0], old_world)
+        worlds[moves] = new_world
+        unit_gain = units_cost(old_world.enemy_units) - units_cost(new_world.enemy_units)
+        map_gain = CELL_FACTOR * (map_count("X", old_world) - map_count("X", new_world))
+        cost = recruitment_cost(need_lvl) + UPKEEP_FACTOR * upkeep_cost(need_lvl)
+        profit[moves] = profit[moves[1:]] + map_gain + unit_gain - cost
+        
+        if len(moves) < 6:          
+            n = Point(moves[0].x + direction[0], moves[0].y + direction[1])
+            if point_playable(n) and not my_point(n):
+                q.append((tuple([n,*moves]), direction))
+
+    if profit:
+        best_moves = max(profit, key=profit.get)
+        if profit[best_moves] > 0:
+            log(f"profit={profit[best_moves]}, {len(best_moves)} turns")
+            return reversed(best_moves)
+    return []
+
 def make_move():
     global g
     commands=[]
@@ -379,7 +425,8 @@ def make_move():
         return commands
 
     # TRY CUT
-    best_moves = try_cut(g.wealth.gold)
+    #best_moves = try_cut(g.wealth.gold)
+    best_moves = try_cut_straight(g.wealth.gold)
     if best_moves:
         for point in best_moves:
             g_new = calc_spawn(point, g)
@@ -390,7 +437,7 @@ def make_move():
     # TRAIN
     #kill_by_spawn(3, 3, wealth, commands)
     #kill_by_spawn(2, 3, wealth, commands)
-    kill_by_spawn(1, 2, g.wealth, commands)
+    #kill_by_spawn(1, 2, g.wealth, commands)
     spawn_level_1_on_border(g.wealth, commands)
 
     # BUILD MINES
@@ -398,6 +445,10 @@ def make_move():
     #     if wealth.gold >= 20:
     #         commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
     #         wealth.gold -= 20
+
+    # TODO BUILD TOWERS
+    # 1. дейкстрой получить кратчайший путь до своей базы от врага.
+    # 2. поставить башню через клетку от врага (пред_пред_последняя точка пути) 
 
     return commands
 
