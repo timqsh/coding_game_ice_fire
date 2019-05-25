@@ -179,6 +179,14 @@ def choose_move(unit):
     }
     p = Point(unit.x, unit.y)
     available_neighbors = [n for n in neighbors(p) if g.point_min_level[n] <= unit.level]
+    def dist_chebushev(p):
+        return max(
+            abs(g.enemy_hq.x - p.x),
+            abs(g.enemy_hq.y - p.y)
+        )
+    #log(available_neighbors)
+    available_neighbors.sort(key=dist_chebushev)
+    #log(available_neighbors)
     return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
 
 def occupied(point, gamemap, *collections):
