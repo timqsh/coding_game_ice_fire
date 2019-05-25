@@ -134,6 +134,17 @@ def neighbors(point, game=None, notmine=False):
     return res
 
 
+def allneighbors(point, game):
+    res = []
+    directions = [(-1, 0), (0, -1), (1, 0), (0, 1)]
+    for d in directions:
+        p = Point(point.x + d[0], point.y + d[1])
+        if not point_playable(p, game):
+            continue
+        res.append(p)
+    return res
+
+
 class PriorityQueue:
     def __init__(self, items=None):
         self.items = items or []
@@ -518,40 +529,68 @@ def make_move():
     #         wealth.gold -= 20
 
     # BUILD TOWERS
-    def reverse_game(game):
-        r_game = G()
-        r_game.map = []
-        for y in range(12):
-            rev = {"X": "O", "x": "o", "O": "X", "o": "x"}
-            row = [rev.get(c, c) for c in game.map[y]]
-            r_game.map.append(row)
-        rev_owner = {ME: THEM, THEM: ME}
-        r_game.units = [
-            Unit(owner=rev_owner[u.owner], level=u.level, x=u.x, y=u.y, id=u.id)
-            for u in game.units
-        ]
-        r_game.buildings = [
-            Building(owner=rev_owner[u.owner], x=u.x, y=u.y, type=u.type)
-            for u in game.buildings
-        ]
-        # game.wealth
-        calculate_globals(r_game)
-        return r_game
+    # clever one
+    # def reverse_game(game):
+    #     r_game = G()
+    #     r_game.map = []
+    #     for y in range(12):
+    #         rev = {"X": "O", "x": "o", "O": "X", "o": "x"}
+    #         row = [rev.get(c, c) for c in game.map[y]]
+    #         r_game.map.append(row)
+    #     rev_owner = {ME: THEM, THEM: ME}
+    #     r_game.units = [
+    #         Unit(owner=rev_owner[u.owner], level=u.level, x=u.x, y=u.y, id=u.id)
+    #         for u in game.units
+    #     ]
+    #     r_game.buildings = [
+    #         Building(owner=rev_owner[u.owner], x=u.x, y=u.y, type=u.type)
+    #         for u in game.buildings
+    #     ]
+    #     # game.wealth
+    #     calculate_globals(r_game)
+    #     return r_game
 
-    g_reversed = reverse_game(g)
-    solution, cost = dijkstra(
-        g_reversed.enemy_hq, g_reversed.border_squares, g_reversed
-    )
-    if g.wealth.gold >= 15 and solution:
-        for node in solution:
-            if (
-                g.map[node.y][node.x] == "O"
-                and Point(node.x, node.y) not in g.my_units_pos
-                and Point(node.x, node.y) not in g.mine_spots
-            ):
-                commands.append(f"BUILD TOWER {node.x} {node.y}")
-                break
-        return commands
+    # g_reversed = reverse_game(g)
+    # solution, cost = dijkstra(
+    #     g_reversed.enemy_hq, g_reversed.border_squares, g_reversed
+    # )
+    # if g.wealth.gold >= 15 and solution:
+    #     for node in solution:
+    #         if (
+    #             g.map[node.y][node.x] == "O"
+    #             and Point(node.x, node.y) not in g.my_units_pos
+    #             and Point(node.x, node.y) not in g.mine_spots
+    #         ):
+    #             commands.append(f"BUILD TOWER {node.x} {node.y}")
+    #             break
+
+    # stupid one
+    my_points = []
+    for x in range(12):
+        for y in range(12):
+            if g.map[y][x] == "O":
+                my_points.append(Point(x, y))
+    building_pos = {Point(b.x, b.y) for b in g.buildings}
+    enemy_unit_pos = {Point(b.x, b.y) for b in g.enemy_units}
+
+    tower_options = [
+        p
+        for p in my_points
+        if p not in g.my_units_pos and p not in g.mine_spots and p not in building_pos
+    ]
+    tower_options_weight = {t: 0 for t in tower_options}
+    for p in tower_options:
+        for n in allneighbors(p, g):
+            if n in g.my_units_pos:
+                tower_options_weight[p] += 1
+            if n in enemy_unit_pos:
+                tower_options_weight[p] += 1.5
+
+    sort_key = lambda p: (tower_options_weight.get(p), -dist_to_enemy_hq(p))
+
+    if g.wealth.gold >= 15 and tower_options_weight:
+        p = max(tower_options_weight, key=sort_key)
+        commands.append(f"BUILD TOWER {p.x} {p.y}")
 
     return commands
 
