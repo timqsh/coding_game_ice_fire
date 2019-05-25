@@ -99,11 +99,11 @@ def turn_input(input):
 
     return wealth, gamemap, buildings, units
 
-def point_playable(p):
-    return 0 <= p.x <= 11 and 0 <= p.y <= 11 and g.map[p.y][p.x] != "#"
+def point_playable(p, game):
+    return 0 <= p.x <= 11 and 0 <= p.y <= 11 and game.map[p.y][p.x] != "#"
 
-def my_point(p):
-    return g.map[p.y][p.x] == "O"
+def my_point(p, game):
+    return game.map[p.y][p.x] == "O"
 
 def my_unit(p, game):
     return p in game.my_units_pos
@@ -111,15 +111,15 @@ def my_unit(p, game):
 def neighbors(point, game=None, notmine=False):
     res = []
     game = game or g
-    if g.enemy_hq.x == 0:
+    if game.enemy_hq.x == 0:
         directions = [(-1,0),(0,-1),(1,0),(0,1)]
     else:
         directions = [(1,0),(0,1),(-1,0),(0,-1)]
     for d in directions:
         p = Point(point.x + d[0], point.y + d[1])
-        if not point_playable(p):
+        if not point_playable(p, game):
             continue
-        if (notmine and my_point(p)) or my_unit(p, game):
+        if (notmine and my_point(p, game)) or my_unit(p, game):
             continue
         res.append(p)        
     return res
@@ -139,17 +139,17 @@ class PriorityQueue:
         weight, item = heapq.heappop(self.items)
         return item, weight
 
-def dijkstra(target, starting_points):
+def dijkstra(target, starting_points, game):
     
     SolutionNode = namedtuple("SolutionNode", ["x", "y", "level"])
     AlgorithmNode = namedtuple("AlgorithmNode", ["cost", "prev"])
     
     def form_solution(prev, cur):
-        solution = [SolutionNode(cur.x, cur.y, g.point_min_level[cur])]
+        solution = [SolutionNode(cur.x, cur.y, game.point_min_level[cur])]
         while prev[cur].prev:
             cur_node = prev[cur]
             cur_point = cur_node.prev
-            solution.append(SolutionNode(cur_point.x, cur_point.y, g.point_min_level[cur_point]))
+            solution.append(SolutionNode(cur_point.x, cur_point.y, game.point_min_level[cur_point]))
             cur = cur_point
         cost = sum(recruitment_cost(n.level) for n in solution)
         return solution, cost 
@@ -164,7 +164,7 @@ def dijkstra(target, starting_points):
         for pos in neighbors(cur):
             prev_cost, prev_point = prev[cur]
             if pos not in prev:
-                add_cost = recruitment_cost(g.point_min_level[pos])
+                add_cost = recruitment_cost(game.point_min_level[pos])
                 prev[pos] = AlgorithmNode(cost=prev_cost+add_cost, prev=cur)
                 q.push(pos, prev_cost+add_cost)
     return None, math.inf
@@ -219,32 +219,32 @@ def calc_border_squares(game):
                     my_squares.add(Point(x, y))
     game.border_squares = list(game.available_squares - my_squares)
 
-def calculate_globals():
-    g.enemy_hq = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
-    g.my_hq = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
+def calculate_globals(game):
+    game.enemy_hq = [Point(b.x, b.y) for b in game.buildings if b.owner == Side.THEM and b.type == BuildingType.HQ][0]
+    game.my_hq = [Point(b.x, b.y) for b in game.buildings if b.owner == Side.ME and b.type == BuildingType.HQ][0]
 
-    g.my_units=[u for u in g.units if u.owner == Side.ME]
-    g.enemy_units = [u for u in g.units if u.owner == Side.THEM]
-    g.my_units_pos={Point(u.x, u.y) for u in g.units if u.owner == Side.ME}
+    game.my_units=[u for u in game.units if u.owner == Side.ME]
+    game.enemy_units = [u for u in game.units if u.owner == Side.THEM]
+    game.my_units_pos={Point(u.x, u.y) for u in game.units if u.owner == Side.ME}
 
-    calc_border_squares(g)
+    calc_border_squares(game)
 
-    enemy_tower_pos = [Point(b.x, b.y) for b in g.buildings if b.owner == Side.THEM and b.type == BuildingType.TOWER]
-    active_enemy_tower = [p for p in enemy_tower_pos if g.map[p.y][p.x] == "X"]
+    enemy_tower_pos = [Point(b.x, b.y) for b in game.buildings if b.owner == Side.THEM and b.type == BuildingType.TOWER]
+    active_enemy_tower = [p for p in enemy_tower_pos if game.map[p.y][p.x] == "X"]
     enemy_tower_neighbors = []
     for p in active_enemy_tower:
         enemy_tower_neighbors += neighbors(p)
-    enemy_tower_active_neighbors = [p for p in enemy_tower_neighbors if g.map[p.y][p.x] == "X"]
-    g.enemy_tower_zones = active_enemy_tower + enemy_tower_active_neighbors
+    enemy_tower_active_neighbors = [p for p in enemy_tower_neighbors if game.map[p.y][p.x] == "X"]
+    game.enemy_tower_zones = active_enemy_tower + enemy_tower_active_neighbors
     
     point_min_level = defaultdict(lambda: 1)
-    for p in g.enemy_tower_zones:
+    for p in game.enemy_tower_zones:
         point_min_level[p] = 3
-    for u in g.enemy_units:
+    for u in game.enemy_units:
          level_to_beat_unit = u.level + 1 if u.level < 3 else 3
          p = Point(u.x, u.y)
          point_min_level[p] = max(point_min_level[p], level_to_beat_unit)
-    g.point_min_level = point_min_level
+    game.point_min_level = point_min_level
 
 def enemy_neighbors(point, g_new):
     res = []
@@ -285,6 +285,9 @@ def calc_spawn(p: Point, g_old):
 
     g_new.my_units_pos = copy(g_old.my_units_pos)
     g_new.my_units_pos.add(p)
+
+    g_new.units = copy(g_old.units)
+    g_new.units.append(Unit(owner=Side.ME, id=777, level=1, x=p.x, y=p.y))
 
     return g_new
 
@@ -414,7 +417,7 @@ def try_cut_straight(budget):
         
         if len(moves) < 6:          
             n = Point(moves[0].x + direction[0], moves[0].y + direction[1])
-            if point_playable(n) and not my_point(n):
+            if point_playable(n, g) and not my_point(n, g):
                 q.append((tuple([n,*moves]), direction))
 
     if profit:
@@ -427,7 +430,7 @@ def try_cut_straight(budget):
 def make_move():
     global g
     commands=[]
-    calculate_globals()
+    calculate_globals(g)
 
     # MOVE
     g.my_units.sort(key=dist_chebyshev)
@@ -438,7 +441,7 @@ def make_move():
             commands.append(f"MOVE {unit.id} {move.x} {move.y}")
 
     # TRY INSTANT KILL
-    solution, cost = dijkstra(g.enemy_hq, g.border_squares)
+    solution, cost = dijkstra(g.enemy_hq, g.border_squares, g)
     if cost <= g.wealth.gold and solution:
         for elem in solution:
             commands.append(f"TRAIN {elem.level} {elem.x} {elem.y}")
@@ -470,12 +473,31 @@ def make_move():
 
     # TODO BUILD TOWERS
     # 1. дейкстрой получить кратчайший путь до своей базы от врага.
-    # 2. поставить башню через клетку от врага (пред_пред_последняя точка пути) 
-    # enemy_border_squares
-    # solution, cost = dijkstra(g.my_hq, enemy_border_squares)
-    # if cost <= g.wealth.opponent_gold + g.wealth.opponent_income and solution:
-    #     commands.append(f"BUILD TOWER {solution[0].x} {solution[0].y}")
-    #     return commands
+    # 2. поставить башню через клетку от врага (пред_пред_последняя точка пути)
+    def reverse_game(game):
+        r_game = G()
+        r_game.map = []
+        for y in range(12):
+            rev = {"X":"O","x":"o","O":"X","o":"x"}
+            row = [rev.get(c, c) for c in game.map[y]]
+            r_game.map.append(row)
+        rev_owner = {Side.ME:Side.THEM, Side.THEM:Side.ME}
+        r_game.units = [Unit(owner=rev_owner[u.owner], level=u.level, x=u.x, y=u.y, id=u.id) for u in game.units]
+        r_game.buildings = [Building(owner=rev_owner[u.owner], x=u.x, y=u.y, type=u.type) for u in game.buildings]
+        #game.wealth
+        calculate_globals(r_game)
+        return r_game
+
+    g_reversed = reverse_game(g)
+    solution, cost = dijkstra(g_reversed.enemy_hq, g_reversed.border_squares, g_reversed)
+    #if cost <= g.wealth.opponent_gold + g.wealth.opponent_income and solution:
+    if g.wealth.gold>=15 and solution:
+        log(solution)
+        for node in solution:
+            if g.map[node.y][node.x] == "O":
+                commands.append(f"BUILD TOWER {node.x} {node.y}")
+                break
+        return commands
 
     return commands
 
