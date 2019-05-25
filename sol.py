@@ -377,17 +377,18 @@ def dist_to_enemy_hq(p: Point):
 
 def spawn_level_1_on_border(wealth, commands):
     i = 0
+    spawn_options = [p for p in g.border_squares if g.point_min_level[p] == 1]
     while (
         wealth.gold >= 10
         and wealth.income >= 0
-        and g.border_squares
+        and spawn_options
         and len(g.my_units_pos) + i < 5
     ):
-        spawn_point = min(g.border_squares, key=dist_to_enemy_hq)
+        spawn_point = min(spawn_options, key=dist_to_enemy_hq)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 10
         wealth.income -= 1
-        g.border_squares.remove(spawn_point)
+        spawn_options.remove(spawn_point)
         i += 1
 
 
