@@ -53,10 +53,16 @@ class G:
 
 
 g = G()
+chat_message = ""
 
 
 def log(x):
     print(x, file=sys.stderr)
+
+
+def msg(x):
+    global chat_message
+    chat_message = chat_message + x
 
 
 def recruitment_cost(level):
@@ -421,7 +427,7 @@ def try_cut(budget):
     if profit:
         best_moves = max(profit, key=profit.get)
         if profit[best_moves] > 0:
-            log(f"profit={profit[best_moves]}, {len(best_moves)} turns")
+            msg(f"profit={profit[best_moves]}, {len(best_moves)} turns")
             return reversed(best_moves)
     return []
 
@@ -460,7 +466,7 @@ def try_cut_straight(budget):
     if profit:
         best_moves = max(profit, key=profit.get)
         if profit[best_moves] > 0:
-            log(f"profit={profit[best_moves]}, {len(best_moves)} turns")
+            msg(f"profit={profit[best_moves]}, {len(best_moves)} turns")
             return reversed(best_moves)
     return []
 
@@ -481,6 +487,7 @@ def make_move():
     # TRY INSTANT KILL
     solution, cost = dijkstra(g.enemy_hq, g.border_squares, g)
     if cost <= g.wealth.gold and solution:
+        msg("^_^")
         for elem in solution:
             commands.append(f"TRAIN {elem.level} {elem.x} {elem.y}")
         return commands
@@ -563,9 +570,13 @@ def main():
     g.mine_spots = initial_input()
     while True:
         global start_time
+        global chat_message
+        chat_message = ""
         start_time = time()
         g.wealth, g.map, g.buildings, g.units = turn_input(input)
         commands = make_move()
+        if chat_message:
+            commands.append(f"MSG {chat_message}")
         if commands:
             print(";".join(commands))
         else:
