@@ -185,12 +185,12 @@ def choose_move(unit):
     }
     p = Point(unit.x, unit.y)
     all_neighbors = neighbors(p)
-    available_neighbors = [n for n in neighbors(p) if g.point_min_level[n] <= unit.level]
+    available_neighbors = [n for n in all_neighbors if g.point_min_level[n] <= unit.level]
 
     # stand your ground
-    enemies_near = len(available_neighbors) > len(all_neighbors)
+    enemies_near = len(all_neighbors) > len(available_neighbors)
     if enemies_near:
-        available_neighbors = [n for n in available_neighbors if g.map[p.y][p.x] != "O"]
+        available_neighbors = [n for n in available_neighbors if g.map[n.y][n.x] != "O"]
 
     available_neighbors.sort(key=dist_chebyshev)
     return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
@@ -282,6 +282,9 @@ def calc_spawn(p: Point, g_old):
     for u in g_old.enemy_units:
         if g_new.map[u.y][u.x] == "X":
             g_new.enemy_units.append(Unit(*u))
+
+    g_new.my_units_pos = copy(g_old.my_units_pos)
+    g_new.my_units_pos.add(p)
 
     return g_new
 
