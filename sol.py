@@ -342,13 +342,15 @@ def kill_by_spawn(enemy_level, my_level, wealth, commands):
 def dist_to_enemy_hq(p:Point):
     return abs(p.x - g.enemy_hq.x) + abs(p.y - g.enemy_hq.y)
 
-def spawn_level_1_on_border(wealth, commands):    
-    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) < 5:
+def spawn_level_1_on_border(wealth, commands):
+    i = 0
+    while wealth.gold >= 10 and wealth.income >= 0 and g.border_squares and len(g.my_units_pos) + i < 5:
         spawn_point = min(g.border_squares, key=dist_to_enemy_hq)
         commands.append(f"TRAIN 1 {spawn_point.x} {spawn_point.y}")
         wealth.gold -= 10
         wealth.income -= 1
         g.border_squares.remove(spawn_point)
+        i+=1
 
 def units_cost(units):
     return sum(recruitment_cost(u.level) for u in units)
@@ -404,7 +406,7 @@ def try_cut_straight(budget):
         old_world = worlds[moves[1:]]
         if moves not in worlds:
             new_world = calc_spawn(moves[0], old_world)
-        worlds[moves] = new_world
+            worlds[moves] = new_world
         unit_gain = units_cost(old_world.enemy_units) - units_cost(new_world.enemy_units)
         map_gain = CELL_FACTOR * (map_count("X", old_world) - map_count("X", new_world))
         cost = recruitment_cost(need_lvl) + UPKEEP_FACTOR * upkeep_cost(need_lvl)
@@ -469,6 +471,11 @@ def make_move():
     # TODO BUILD TOWERS
     # 1. дейкстрой получить кратчайший путь до своей базы от врага.
     # 2. поставить башню через клетку от врага (пред_пред_последняя точка пути) 
+    # enemy_border_squares
+    # solution, cost = dijkstra(g.my_hq, enemy_border_squares)
+    # if cost <= g.wealth.opponent_gold + g.wealth.opponent_income and solution:
+    #     commands.append(f"BUILD TOWER {solution[0].x} {solution[0].y}")
+    #     return commands
 
     return commands
 
