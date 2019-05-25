@@ -161,7 +161,7 @@ def dijkstra(target, starting_points, game):
         cur, cur_weight = q.pop()
         if cur in starting_points:
             return form_solution(prev, cur)
-        for pos in neighbors(cur):
+        for pos in neighbors(cur, game):
             prev_cost, prev_point = prev[cur]
             if pos not in prev:
                 add_cost = recruitment_cost(game.point_min_level[pos])
@@ -471,9 +471,7 @@ def make_move():
     #         commands.append(f"BUILD MINE {available_mine.x} {available_mine.y}")
     #         wealth.gold -= 20
 
-    # TODO BUILD TOWERS
-    # 1. дейкстрой получить кратчайший путь до своей базы от врага.
-    # 2. поставить башню через клетку от врага (пред_пред_последняя точка пути)
+    # BUILD TOWERS
     def reverse_game(game):
         r_game = G()
         r_game.map = []
@@ -490,11 +488,9 @@ def make_move():
 
     g_reversed = reverse_game(g)
     solution, cost = dijkstra(g_reversed.enemy_hq, g_reversed.border_squares, g_reversed)
-    #if cost <= g.wealth.opponent_gold + g.wealth.opponent_income and solution:
     if g.wealth.gold>=15 and solution:
-        log(solution)
         for node in solution:
-            if g.map[node.y][node.x] == "O":
+            if g.map[node.y][node.x] == "O" and Point(node.x, node.y) not in g.my_units_pos:
                 commands.append(f"BUILD TOWER {node.x} {node.y}")
                 break
         return commands
