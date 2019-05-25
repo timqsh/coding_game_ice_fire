@@ -169,6 +169,12 @@ def dijkstra(target, starting_points):
                 q.push(pos, prev_cost+add_cost)
     return None, math.inf
 
+def dist_chebyshev(p):
+    return max(
+        abs(g.enemy_hq.x - p.x),
+        abs(g.enemy_hq.y - p.y)
+    )
+
 def choose_move(unit):
     prior = {
         "X":0,
@@ -178,15 +184,15 @@ def choose_move(unit):
         "O":4,
     }
     p = Point(unit.x, unit.y)
+    all_neighbors = neighbors(p)
     available_neighbors = [n for n in neighbors(p) if g.point_min_level[n] <= unit.level]
-    def dist_chebushev(p):
-        return max(
-            abs(g.enemy_hq.x - p.x),
-            abs(g.enemy_hq.y - p.y)
-        )
-    #log(available_neighbors)
-    available_neighbors.sort(key=dist_chebushev)
-    #log(available_neighbors)
+
+    # stand your ground
+    enemies_near = len(available_neighbors) > len(all_neighbors)
+    if enemies_near:
+        available_neighbors = [n for n in available_neighbors if g.map[p.y][p.x] != "O"]
+
+    available_neighbors.sort(key=dist_chebyshev)
     return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
 
 def occupied(point, gamemap, *collections):
@@ -419,6 +425,7 @@ def make_move():
     calculate_globals()
 
     # MOVE
+    g.my_units.sort(key=dist_chebyshev)
     for unit in g.my_units:
         move = choose_move(unit)
         if move:
@@ -440,6 +447,8 @@ def make_move():
             g_new = calc_spawn(point, g)
             g.enemy_units = g_new.enemy_units
             g.wealth.gold -= recruitment_cost(g.point_min_level[point])
+            g.units = g_new.units
+            g.my_units_pos = g_new.my_units_pos
             commands.append(f"TRAIN {g.point_min_level[point]} {point.x} {point.y}")
 
     # TRAIN
