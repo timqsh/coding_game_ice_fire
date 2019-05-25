@@ -490,7 +490,10 @@ def make_move():
     solution, cost = dijkstra(g_reversed.enemy_hq, g_reversed.border_squares, g_reversed)
     if g.wealth.gold>=15 and solution:
         for node in solution:
-            if g.map[node.y][node.x] == "O" and Point(node.x, node.y) not in g.my_units_pos:
+            if (g.map[node.y][node.x] == "O" 
+                and Point(node.x, node.y) not in g.my_units_pos
+                and Point(node.x, node.y) not in g.mine_spots
+                ):
                 commands.append(f"BUILD TOWER {node.x} {node.y}")
                 break
         return commands
