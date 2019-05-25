@@ -1,35 +1,20 @@
-import sys
+import heapq
 import math
-from collections import namedtuple, deque, defaultdict
-from enum import Enum
 import random
+import sys
+from collections import defaultdict, deque, namedtuple
+from copy import copy
 from dataclasses import dataclass
 from time import time
-import heapq
-from copy import copy
 
 random.seed(1337)
 start_time = time()
 
-
-def recruitment_cost(level):
-    return [10, 20, 30][level - 1]
-
-
-def upkeep_cost(level):
-    return [1, 4, 20][level - 1]
-
-
-class Side(Enum):
-    ME = 0
-    THEM = 1
-
-
-class BuildingType(Enum):
-    HQ = 0
-    MINE = 1
-    TOWER = 2
-
+ME = 0
+THEM = 1
+HQ = 0
+MINE = 1
+TOWER = 2
 
 Point = namedtuple("Point", ["x", "y"])
 Unit = namedtuple("Unit", ["owner", "id", "level", "x", "y"])
@@ -74,6 +59,14 @@ def log(x):
     print(x, file=sys.stderr)
 
 
+def recruitment_cost(level):
+    return [10, 20, 30][level - 1]
+
+
+def upkeep_cost(level):
+    return [1, 4, 20][level - 1]
+
+
 def initial_input():
     number_mine_spots = int(input())
     mine_spots = []
@@ -95,15 +88,12 @@ def turn_input(input):
     buildings = []
     for i in range(building_count):
         params = [int(j) for j in input().split()]
-        params[0] = Side(params[0])
-        params[1] = BuildingType(params[1])
         buildings.append(Building(*params))
 
     unit_count = int(input())
     units = []
     for i in range(unit_count):
         params = [int(j) for j in input().split()]
-        params[0] = Side(params[0])
         units.append(Unit(*params))
 
     return wealth, gamemap, buildings, units
@@ -218,7 +208,7 @@ def occupied(point, gamemap, *collections):
 
 
 def calc_border_squares(game):
-    my_buildings = {Point(u.x, u.y) for u in game.buildings if u.owner == Side.ME}
+    my_buildings = {Point(u.x, u.y) for u in game.buildings if u.owner == ME}
     game.available_squares = set()
     my_squares = set()
     for x in range(12):
@@ -235,26 +225,20 @@ def calc_border_squares(game):
 
 def calculate_globals(game):
     game.enemy_hq = [
-        Point(b.x, b.y)
-        for b in game.buildings
-        if b.owner == Side.THEM and b.type == BuildingType.HQ
+        Point(b.x, b.y) for b in game.buildings if b.owner == THEM and b.type == HQ
     ][0]
     game.my_hq = [
-        Point(b.x, b.y)
-        for b in game.buildings
-        if b.owner == Side.ME and b.type == BuildingType.HQ
+        Point(b.x, b.y) for b in game.buildings if b.owner == ME and b.type == HQ
     ][0]
 
-    game.my_units = [u for u in game.units if u.owner == Side.ME]
-    game.enemy_units = [u for u in game.units if u.owner == Side.THEM]
-    game.my_units_pos = {Point(u.x, u.y) for u in game.units if u.owner == Side.ME}
+    game.my_units = [u for u in game.units if u.owner == ME]
+    game.enemy_units = [u for u in game.units if u.owner == THEM]
+    game.my_units_pos = {Point(u.x, u.y) for u in game.units if u.owner == ME}
 
     calc_border_squares(game)
 
     enemy_tower_pos = [
-        Point(b.x, b.y)
-        for b in game.buildings
-        if b.owner == Side.THEM and b.type == BuildingType.TOWER
+        Point(b.x, b.y) for b in game.buildings if b.owner == THEM and b.type == TOWER
     ]
     active_enemy_tower = [p for p in enemy_tower_pos if game.map[p.y][p.x] == "X"]
     enemy_tower_neighbors = []
@@ -317,7 +301,7 @@ def calc_spawn(p: Point, g_old):
     g_new.my_units_pos.add(p)
 
     g_new.units = copy(g_old.units)
-    g_new.units.append(Unit(owner=Side.ME, id=777, level=1, x=p.x, y=p.y))
+    g_new.units.append(Unit(owner=ME, id=777, level=1, x=p.x, y=p.y))
 
     return g_new
 
@@ -330,14 +314,12 @@ def calc_move(unit: Unit, dest: Point, g_old: G):
 
     g_new.units = copy(g_old.units)
     g_new.units.remove(unit)
-    g_new.units.append(
-        Unit(owner=Side.ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y)
-    )
+    g_new.units.append(Unit(owner=ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y))
 
     g_new.my_units = copy(g_old.my_units)
     g_new.my_units.remove(unit)
     g_new.my_units.append(
-        Unit(owner=Side.ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y)
+        Unit(owner=ME, id=unit.id, level=unit.level, x=dest.x, y=dest.y)
     )
 
     g_new.buildings = copy(g_old.buildings)
@@ -535,7 +517,7 @@ def make_move():
             rev = {"X": "O", "x": "o", "O": "X", "o": "x"}
             row = [rev.get(c, c) for c in game.map[y]]
             r_game.map.append(row)
-        rev_owner = {Side.ME: Side.THEM, Side.THEM: Side.ME}
+        rev_owner = {ME: THEM, THEM: ME}
         r_game.units = [
             Unit(owner=rev_owner[u.owner], level=u.level, x=u.x, y=u.y, id=u.id)
             for u in game.units
