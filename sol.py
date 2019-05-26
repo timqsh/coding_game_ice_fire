@@ -233,7 +233,7 @@ def choose_move(unit):
     # stand your ground
     enemies_near = len(all_neighbors) > len(available_neighbors)
     if enemies_near:
-        available_neighbors = [n for n in available_neighbors if my_pos(n, g)]
+        available_neighbors = [n for n in available_neighbors if not my_pos(n, g)]
 
     available_neighbors.sort(key=dist_chebyshev)
     return min(available_neighbors, key=lambda p: prior[g.map[p.y][p.x]], default=None)
