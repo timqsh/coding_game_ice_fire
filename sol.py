@@ -341,7 +341,10 @@ def calc_spawn(p: Pos, g_old):
         g_new.map.append(["x" if c == "X" else c for c in row])
     g_new.map[p.y][p.x] = "O"
     dfs_enemy(g_old.enemy_hq, g_new)
-    # TODO dfs_my (inactive to active) чтобы точнее оценивать профит
+
+    for x, row in enumerate(g_new.map):
+        g_new.map[x] = ["o" if c == "O" else c for c in row]
+    dfs_my(g_old.my_hq, g_new)
 
     g_new.enemy_units = []
     for u in g_old.enemy_units:
@@ -486,9 +489,16 @@ def try_cut_straight(budget):
         unit_gain = units_cost(old_world.enemy_units) - units_cost(
             new_world.enemy_units
         )
-        map_gain = CELL_FACTOR * (map_count("X", old_world) - map_count("X", new_world))
+        enemy_map_gain = CELL_FACTOR * (
+            map_count("X", old_world) - map_count("X", new_world)
+        )
+        my_map_gain = -CELL_FACTOR * (
+            map_count("O", old_world) - map_count("O", new_world)
+        )
         cost = recruitment_cost(need_lvl) + UPKEEP_FACTOR * upkeep_cost(need_lvl)
-        profit[moves] = profit[moves[1:]] + map_gain + unit_gain - cost
+        profit[moves] = (
+            profit[moves[1:]] + enemy_map_gain + my_map_gain + unit_gain - cost
+        )
 
         if len(moves) < 6:
             n = Pos(moves[0].x + direction[0], moves[0].y + direction[1])
