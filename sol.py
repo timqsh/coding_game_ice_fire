@@ -297,7 +297,7 @@ def calculate_globals(game):
     game.pos_min_level = pos_min_level
 
 
-def enemy_neighbors(pos: Pos, g_new: Game):
+def enemy_neighbors(pos: Pos, game: Game):
     res = []
     if pos.x < 11:
         res.append(Pos(pos.x + 1, pos.y))
@@ -308,14 +308,21 @@ def enemy_neighbors(pos: Pos, g_new: Game):
     if pos.y > 0:
         res.append(Pos(pos.x, pos.y - 1))
 
-    res = [r for r in res if g_new.map[r.y][r.x] == "x"]
+    res = [r for r in res if game.map[r.y][r.x] == "x"]
     return res
 
 
-def dfs_enemy(start, g_new: Game):
-    g_new.map[start.y][start.x] = "X"
-    for n in enemy_neighbors(start, g_new):
-        dfs_enemy(n, g_new)
+def dfs_enemy(start, game: Game):
+    game.map[start.y][start.x] = "X"
+    for n in enemy_neighbors(start, game):
+        dfs_enemy(n, game)
+
+
+def dfs_my(start, game: Game):
+    game.map[start.y][start.x] = "O"
+    for n in allneighbors(start, game):
+        if game.map[n.y][n.x] == "o":
+            dfs_my(n, game)
 
 
 def calc_spawn(p: Pos, g_old):
@@ -372,6 +379,10 @@ def calc_move(unit: Unit, dest: Pos, g_old: Game):
     g_new.map[dest.y][dest.x] = "O"
     dfs_enemy(g_old.enemy_hq, g_new)
     # TODO dfs_my (inactive to active) чтобы после хода было больше опций для вызова
+
+    for x, row in enumerate(g_new.map):
+        g_new.map[x] = ["o" if c == "O" else c for c in row]
+    dfs_my(g_old.my_hq, g_new)  
 
     calc_border_positions(g_new)
 
@@ -591,7 +602,9 @@ def strategy():
         return commands
     try_cut(commands)
     # try_kill_by_spawn(commands)
-    spawn_level_1_on_border(commands)  # TODO ставить так чтобы не мешать на след. ходу своим
+    spawn_level_1_on_border(
+        commands
+    )  # TODO ставить так чтобы не мешать на след. ходу своим
     # build_mines(commands)
     build_towers(commands)
 
@@ -612,7 +625,9 @@ def main():
     while True:
         chat_message = ""
         start_time = time()
-        g.wealth, g.map, g.buildings, g.units = turn_input(test_input if is_test else input)
+        g.wealth, g.map, g.buildings, g.units = turn_input(
+            test_input if is_test else input
+        )
         commands = strategy()
         msg(f"{time()-start_time:.2f}")
         if chat_message:
