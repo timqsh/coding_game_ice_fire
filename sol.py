@@ -583,7 +583,8 @@ def build_towers(commands):
 
     if g.wealth.gold >= 15 and tower_options_weight:
         p = max(tower_options_weight, key=sort_key)
-        commands.append(f"BUILD TOWER {p.x} {p.y}")
+        if tower_options_weight[p] > 0:
+            commands.append(f"BUILD TOWER {p.x} {p.y}")
 
 
 def strategy():
