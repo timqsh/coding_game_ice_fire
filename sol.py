@@ -580,7 +580,11 @@ def build_towers(commands):
     for p in tower_options:
         for n in allneighbors(p, g):
             if n in g.my_units_pos:
-                tower_options_weight[p] += 1
+                enemy_near_my_unit = False
+                for nn in allneighbors(n, g):
+                    if nn in enemy_unit_pos:
+                        enemy_near_my_unit = True
+                tower_options_weight[p] += 2 if enemy_near_my_unit else 1
             if n in enemy_unit_pos:
                 tower_options_weight[p] += 1.5
 
