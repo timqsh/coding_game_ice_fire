@@ -230,6 +230,12 @@ def choose_move(unit):
     all_neighbors = neighbors(p)
     available_neighbors = [n for n in all_neighbors if g.pos_min_level[n] <= unit.level]
 
+    # remove tower positions
+    my_tower_pos = {
+        Pos(b.x, b.y) for b in g.buildings if b.owner == ME and b.type == TOWER
+    }
+    available_neighbors = [n for n in available_neighbors if n not in my_tower_pos]
+
     # stand your ground
     enemies_near = len(all_neighbors) > len(available_neighbors)
     if enemies_near:
@@ -371,7 +377,6 @@ def calc_move(unit: Unit, dest: Pos, g_old: Game):
         g_new.map.append(["x" if c == "X" else c for c in row])
     g_new.map[dest.y][dest.x] = "O"
     dfs_enemy(g_old.enemy_hq, g_new)
-    # TODO dfs_my (inactive to active) чтобы после хода было больше опций для вызова
 
     calc_border_positions(g_new)
 
